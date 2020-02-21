@@ -58,7 +58,21 @@ func NewNats(logger Logger, url, token, enc string) *broker {
 		logger.Warn("Connection Closed: ", nc.LastError())
 	})
 
-	nc, err := nats.Connect(url, nats.Token(token), dh, rh, ch)
+	var (
+		err error
+		nc  *nats.Conn
+	)
+
+	for _, interval := range []int{0, 1, 2, 5} {
+		time.Sleep(time.Duration(interval) * time.Second)
+
+		if nc, err = nats.Connect(url, nats.Token(token), dh, rh, ch); err != nil {
+			continue
+		}
+
+		break
+	}
+
 	if err != nil {
 		logger.Fatal(url, delimiter, err)
 	}
