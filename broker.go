@@ -33,10 +33,10 @@ type Logger interface {
 
 func NewNatsFromEnv(logger Logger) *broker {
 
-	url := os.Getenv("ELAPSE_NATS_URL")
-	token := os.Getenv("ELAPSE_NATS_TOKEN")
+	url := os.Getenv("REVERTED_NATS_URL")
+	token := os.Getenv("REVERTED_NATS_TOKEN")
 
-	enc, ok := os.LookupEnv("ELAPSE_NATS_ENC")
+	enc, ok := os.LookupEnv("REVERTED_NATS_ENC")
 	if !ok {
 		enc = nats.JSON_ENCODER
 	}
