@@ -2,47 +2,12 @@ package broker
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
-	"os"
 	"time"
 
 	"github.com/nats-io/nats.go"
 )
-
-type Broker interface {
-	Publish(string, interface{}) error
-	PublishRequest(string, string, interface{}) error
-	Request(string, interface{}, interface{}, time.Duration) error
-	Subscribe(string, interface{}) (interface{}, error)
-	QueueSubscribe(string, string, interface{}) (interface{}, error)
-	Close()
-}
-
-type Logger interface {
-	Fatal(a ...interface{})
-	Fatalf(format string, a ...interface{})
-	Error(a ...interface{})
-	Errorf(format string, a ...interface{})
-	Warn(a ...interface{})
-	Warnf(format string, a ...interface{})
-	Info(a ...interface{})
-	Infof(format string, a ...interface{})
-	Debug(a ...interface{})
-	Debugf(format string, a ...interface{})
-}
-
-func NewNatsFromEnv(logger Logger) *broker {
-
-	url := os.Getenv("REVERTED_NATS_URL")
-	token := os.Getenv("REVERTED_NATS_TOKEN")
-
-	enc, ok := os.LookupEnv("REVERTED_NATS_ENC")
-	if !ok {
-		enc = nats.JSON_ENCODER
-	}
-
-	return NewNats(logger, url, token, enc)
-}
 
 func NewNats(logger Logger, url, token, enc string) *broker {
 
@@ -63,7 +28,7 @@ func NewNats(logger Logger, url, token, enc string) *broker {
 		nc  *nats.Conn
 	)
 
-	for _, interval := range []int{0, 1, 2, 5} {
+	for _, interval := range []int{0, 1, 2, 5, 10, 30, 60} {
 		time.Sleep(time.Duration(interval) * time.Second)
 
 		if nc, err = nats.Connect(url, nats.Token(token), dh, rh, ch); err != nil {
@@ -74,22 +39,42 @@ func NewNats(logger Logger, url, token, enc string) *broker {
 	}
 
 	if err != nil {
-		logger.Fatal(url, delimiter, err)
+		log.Fatal(err)
 	}
 
 	c, err := nats.NewEncodedConn(nc, enc)
 	if err != nil {
-		logger.Fatal(url, delimiter, err)
+		log.Fatal(err)
 	}
 
-	broker := &broker{logger, c}
+	return New(logger, NewNatsAdapter(c))
+}
+
+type Logger interface {
+	Error(a ...interface{})
+	Warn(a ...interface{})
+	Info(a ...interface{})
+	Debug(a ...interface{})
+}
+
+type Connection interface {
+	Publish(string, interface{}) error
+	PublishRequest(string, string, interface{}) error
+	Request(string, interface{}, interface{}, time.Duration) error
+	Subscribe(string, interface{}) (interface{}, error)
+	QueueSubscribe(string, string, interface{}) (interface{}, error)
+	Close()
+}
+
+func New(logger Logger, conn Connection) *broker {
+	broker := &broker{logger, conn}
 	go broker.Heartbeat(30 * time.Second)
 	return broker
 }
 
 type broker struct {
 	Logger
-	Conn *nats.EncodedConn
+	Connection
 }
 
 func (self *broker) Heartbeat(interval time.Duration) {
@@ -105,7 +90,7 @@ func (self *broker) Heartbeat(interval time.Duration) {
 }
 
 func (self *broker) Publish(subject string, v interface{}) error {
-	if err := self.Conn.Publish(subject, v); err != nil {
+	if err := self.Connection.Publish(subject, v); err != nil {
 		self.Logger.Error(err)
 		return err
 	} else {
@@ -115,7 +100,7 @@ func (self *broker) Publish(subject string, v interface{}) error {
 }
 
 func (self *broker) PublishRequest(subject string, reply string, v interface{}) error {
-	if err := self.Conn.PublishRequest(subject, reply, v); err != nil {
+	if err := self.Connection.PublishRequest(subject, reply, v); err != nil {
 		self.Logger.Error(err)
 		return err
 	} else {
@@ -125,7 +110,7 @@ func (self *broker) PublishRequest(subject string, reply string, v interface{}) 
 }
 
 func (self *broker) Request(subject string, v interface{}, vPtr interface{}, timeout time.Duration) error {
-	if err := self.Conn.Request(subject, v, vPtr, timeout); err != nil {
+	if err := self.Connection.Request(subject, v, vPtr, timeout); err != nil {
 		self.Logger.Error(err)
 		return err
 	} else {
@@ -135,7 +120,7 @@ func (self *broker) Request(subject string, v interface{}, vPtr interface{}, tim
 }
 
 func (self *broker) Subscribe(subject string, cb interface{}) (interface{}, error) {
-	if sub, err := self.Conn.Subscribe(subject, cb); err != nil {
+	if sub, err := self.Connection.Subscribe(subject, cb); err != nil {
 		self.Logger.Error(err)
 		return nil, err
 	} else {
@@ -145,7 +130,7 @@ func (self *broker) Subscribe(subject string, cb interface{}) (interface{}, erro
 }
 
 func (self *broker) QueueSubscribe(subject string, queue string, cb interface{}) (interface{}, error) {
-	if sub, err := self.Conn.QueueSubscribe(subject, queue, cb); err != nil {
+	if sub, err := self.Connection.QueueSubscribe(subject, queue, cb); err != nil {
 		self.Logger.Error(err)
 		return nil, err
 	} else {
@@ -154,8 +139,20 @@ func (self *broker) QueueSubscribe(subject string, queue string, cb interface{})
 	}
 }
 
-func (self *broker) Close() {
-	self.Conn.Close()
+const delimiter = " "
+
+func NewNatsAdapter(conn *nats.EncodedConn) *adapter {
+	return &adapter{conn}
 }
 
-const delimiter = " "
+type adapter struct {
+	*nats.EncodedConn
+}
+
+func (self *adapter) Subscribe(subject string, cb interface{}) (interface{}, error) {
+	return self.EncodedConn.Subscribe(subject, cb)
+}
+
+func (self *adapter) QueueSubscribe(subject string, queue string, cb interface{}) (interface{}, error) {
+	return self.EncodedConn.QueueSubscribe(subject, queue, cb)
+}
