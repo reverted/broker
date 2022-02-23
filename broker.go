@@ -7,10 +7,10 @@ import (
 )
 
 type Logger interface {
-	Error(a ...interface{})
-	Warn(a ...interface{})
-	Infof(a ...interface{})
-	Debugf(a ...interface{})
+	Error(...interface{})
+	Warn(...interface{})
+	Infof(string, ...interface{})
+	Debugf(string, ...interface{})
 }
 
 type Connection interface {
