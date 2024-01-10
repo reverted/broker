@@ -2,7 +2,11 @@ module github.com/reverted/broker
 
 go 1.20
 
-require github.com/nats-io/nats.go v1.31.0
+require (
+	github.com/nats-io/nats.go v1.31.0
+	github.com/onsi/ginkgo v1.16.5
+	github.com/onsi/gomega v1.30.0
+)
 
 require (
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
