@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/nats-io/nats.go v1.32.0
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.31.0
+	github.com/onsi/gomega v1.31.1
 )
 
 require (
