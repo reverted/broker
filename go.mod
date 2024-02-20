@@ -3,7 +3,7 @@ module github.com/reverted/broker
 go 1.20
 
 require (
-	github.com/nats-io/nats.go v1.33.0
+	github.com/nats-io/nats.go v1.33.1
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.31.1
 )
