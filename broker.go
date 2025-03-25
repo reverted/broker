@@ -8,7 +8,11 @@ import (
 )
 
 type Broker struct {
+	// event type -> subscribers map
 	subscribers map[string][]chan cloudevents.Event
+
+	// all subscribers - these will receive all events
+	allSubscribers []chan cloudevents.Event
 
 	// mu protects subscribers
 	mu sync.RWMutex
@@ -37,7 +41,13 @@ func (eb *Broker) Subscribe(eventType string) <-chan cloudevents.Event {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 	ch := make(chan cloudevents.Event, 10) // Buffered channel
-	eb.subscribers[eventType] = append(eb.subscribers[eventType], ch)
+
+	if eventType == "*" { // Subscribe to all events
+		eb.allSubscribers = append(eb.allSubscribers, ch)
+	} else {
+		eb.subscribers[eventType] = append(eb.subscribers[eventType], ch)
+	}
+
 	return ch
 }
 
@@ -50,6 +60,14 @@ func (eb *Broker) Publish(event cloudevents.Event) {
 	defer eb.mu.RUnlock()
 
 	for _, subs := range eb.subscribers[event.Type()] {
+		eb.wg.Add(1)
+		go func() {
+			defer eb.wg.Done()
+			subs <- event
+		}()
+	}
+
+	for _, subs := range eb.allSubscribers {
 		eb.wg.Add(1)
 		go func() {
 			defer eb.wg.Done()
@@ -78,10 +96,15 @@ func (eb *Broker) Shutdown() {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
-	// Close all channels
+	// Close all typed subscriptions
 	for _, subs := range eb.subscribers {
 		for _, ch := range subs {
 			close(ch)
 		}
+	}
+
+	// Close all wildcard subscriptions
+	for _, ch := range eb.allSubscribers {
+		close(ch)
 	}
 }

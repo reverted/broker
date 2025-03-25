@@ -232,3 +232,28 @@ func TestMultipleSubscribersSameCallback(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, int32(2), counter.Load(), "Callback should be called exactly twice")
 }
+
+func TestSubscribeToAllTypes(t *testing.T) {
+	b := broker.NewBroker()
+	defer b.Shutdown()
+
+	// Subscribe to all events
+	ch := b.Subscribe("*")
+
+	// Publish an event
+	event := createTestEvent("test.event", "test-data")
+	b.Publish(event)
+
+	// Wait for the event
+	select {
+	case receivedEvent := <-ch:
+		assert.Equal(t, event.ID(), receivedEvent.ID())
+		assert.Equal(t, event.Type(), receivedEvent.Type())
+		var data string
+		err := receivedEvent.DataAs(&data)
+		assert.NoError(t, err)
+		assert.Equal(t, "test-data", data)
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timed out waiting for event")
+	}
+}
