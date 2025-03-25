@@ -18,7 +18,7 @@ func createTestEvent(eventType string, data string) cloudevents.Event {
 	event.SetID(uuid.New().String())
 	event.SetSource("test")
 	event.SetType(eventType)
-	event.SetData(cloudevents.TextPlain, data)
+	event.SetData(cloudevents.TextPlain, data) //nolint:errcheck
 	return event
 }
 
