@@ -7,6 +7,8 @@ import (
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 )
 
+type EventHandler func(cloudevents.Event)
+
 type Broker struct {
 	// event type -> subscribers map
 	subscribers map[string][]chan cloudevents.Event
