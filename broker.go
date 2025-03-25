@@ -1,98 +1,87 @@
 package broker
 
 import (
-	"fmt"
-	"math/rand"
-	"time"
+	"sync"
+	"sync/atomic"
+
+	cloudevents "github.com/cloudevents/sdk-go/v2"
 )
 
-type Logger interface {
-	Error(...interface{})
-	Warn(...interface{})
-	Infof(string, ...interface{})
-	Debugf(string, ...interface{})
+type Broker struct {
+	subscribers map[string][]chan cloudevents.Event
+
+	// mu protects subscribers
+	mu sync.RWMutex
+	// wg waits for all events to be processed
+	wg sync.WaitGroup
+
+	// shuttingDown is set to true when the bus is being shut down
+	shuttingDown atomic.Bool
 }
 
-type Connection interface {
-	Publish(string, interface{}) error
-	PublishRequest(string, string, interface{}) error
-	Request(string, interface{}, interface{}, time.Duration) error
-	Subscribe(string, interface{}) (interface{}, error)
-	QueueSubscribe(string, string, interface{}) (interface{}, error)
-	Close()
+func NewBroker() *Broker {
+	return &Broker{
+		subscribers:  make(map[string][]chan cloudevents.Event),
+		shuttingDown: atomic.Bool{},
+	}
 }
 
-func New(logger Logger, conn Connection) *broker {
-	broker := &broker{logger, conn}
-	go broker.Heartbeat(30 * time.Second)
-	return broker
+func (eb *Broker) Subscribe(eventType string) <-chan cloudevents.Event {
+	if eb.shuttingDown.Load() {
+		// Return a closed channel
+		ch := make(chan cloudevents.Event)
+		close(ch)
+		return ch
+	}
+
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	ch := make(chan cloudevents.Event, 10) // Buffered channel
+	eb.subscribers[eventType] = append(eb.subscribers[eventType], ch)
+	return ch
 }
 
-type broker struct {
-	Logger
-	Connection
+func (eb *Broker) Publish(event cloudevents.Event) {
+	if eb.shuttingDown.Load() {
+		return
+	}
+
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
+
+	for _, subs := range eb.subscribers[event.Type()] {
+		eb.wg.Add(1)
+		go func() {
+			defer eb.wg.Done()
+			subs <- event
+		}()
+	}
 }
 
-func (self *broker) Heartbeat(interval time.Duration) {
-	topic := fmt.Sprintf("heartbeat:%v", rand.Int())
-
-	self.Subscribe(topic, func(time *time.Time) {
-		self.Logger.Infof("%v %v", topic, time)
-	})
-
-	for tick := range time.Tick(interval) {
-		if err := self.Publish(topic, tick); err != nil {
-			self.Logger.Error(err)
+func (eb *Broker) SubscribeFunc(eventType string, f func(cloudevents.Event)) {
+	ch := eb.Subscribe(eventType)
+	go func() {
+		for event := range ch {
+			f(event)
 		}
-	}
+	}()
 }
 
-func (self *broker) Publish(subject string, v interface{}) error {
-	if err := self.Connection.Publish(subject, v); err != nil {
-		self.Logger.Error(err)
-		return err
-	} else {
-		self.Logger.Debugf("%v %v", subject, v)
-		return nil
-	}
-}
+func (eb *Broker) Shutdown() {
+	// Mark the bus as shutting down - this prevents new subscriptions
+	// and new events from being published
+	eb.shuttingDown.Store(true)
 
-func (self *broker) PublishRequest(subject string, reply string, v interface{}) error {
-	if err := self.Connection.PublishRequest(subject, reply, v); err != nil {
-		self.Logger.Error(err)
-		return err
-	} else {
-		self.Logger.Debugf("%v %v", subject, v)
-		return nil
-	}
-}
+	// Wait for all events to be processed
+	eb.wg.Wait()
 
-func (self *broker) Request(subject string, v interface{}, vPtr interface{}, timeout time.Duration) error {
-	if err := self.Connection.Request(subject, v, vPtr, timeout); err != nil {
-		self.Logger.Error(err)
-		return err
-	} else {
-		self.Logger.Debugf("%v %v", subject, v)
-		return nil
-	}
-}
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
-func (self *broker) Subscribe(subject string, cb interface{}) (interface{}, error) {
-	if sub, err := self.Connection.Subscribe(subject, cb); err != nil {
-		self.Logger.Error(err)
-		return nil, err
-	} else {
-		self.Logger.Debugf("%v", subject)
-		return sub, nil
-	}
-}
-
-func (self *broker) QueueSubscribe(subject string, queue string, cb interface{}) (interface{}, error) {
-	if sub, err := self.Connection.QueueSubscribe(subject, queue, cb); err != nil {
-		self.Logger.Error(err)
-		return nil, err
-	} else {
-		self.Logger.Debugf("%v %v", subject, queue)
-		return sub, nil
+	// Close all channels
+	for _, subs := range eb.subscribers {
+		for _, ch := range subs {
+			close(ch)
+		}
 	}
 }
