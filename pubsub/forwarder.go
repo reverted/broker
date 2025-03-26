@@ -21,13 +21,13 @@ type Logger interface {
 	Infof(string, ...interface{})
 }
 
-type PubSubForwarder struct {
+type Forwarder struct {
 	topic  string
 	client cloudevents.Client
 	logger Logger
 }
 
-func (p *PubSubForwarder) Send(ctx context.Context, event cloudevents.Event) {
+func (p *Forwarder) Send(ctx context.Context, event cloudevents.Event) {
 	ctx = cecontext.WithTopic(ctx, p.topic)
 
 	// We configure pubsub to push unwrap payloads - for this to work
@@ -44,7 +44,7 @@ func (p *PubSubForwarder) Send(ctx context.Context, event cloudevents.Event) {
 	}
 }
 
-func NewPubSubForwarder(logger Logger, topic string) (broker.EventHandler, error) {
+func NewForwarder(logger Logger, topic string) (broker.EventHandler, error) {
 	ctx := context.Background()
 	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
 
@@ -66,7 +66,7 @@ func NewPubSubForwarder(logger Logger, topic string) (broker.EventHandler, error
 		return nil, fmt.Errorf("failed to create cloudevents client: %w", err)
 	}
 
-	pubsub := &PubSubForwarder{
+	pubsub := &Forwarder{
 		topic:  topic,
 		client: client,
 		logger: logger,
