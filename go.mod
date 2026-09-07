@@ -1,6 +1,6 @@
 module github.com/reverted/broker
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/cloudevents/sdk-go/protocol/pubsub/v2 v2.16.2
@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/oauth2 v0.36.0
-	google.golang.org/api v0.296.0
+	google.golang.org/api v0.297.0
 )
 
 require (
